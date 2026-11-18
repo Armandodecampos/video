@@ -22,24 +22,33 @@
     #stage {
       position: fixed;
       inset: 0;
+      display: grid;
+      place-items: center;
       background:
         radial-gradient(ellipse at 50% 40%, rgba(35, 57, 78, .5), transparent 60%),
         #101523;
     }
 
-    #stage canvas { display: block; width: 100%; height: 100%; }
+    #stage canvas {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      display: block;
+      transform: translate(-50%, -50%);
+    }
 
     .topbar {
       position: absolute;
       z-index: 2;
-      top: 0;
-      left: 0;
+      top: calc((100% - var(--frame-height, 100%)) / 2);
+      left: 50%;
       display: flex;
-      width: 100%;
+      width: var(--frame-width, 100%);
       align-items: flex-start;
       justify-content: space-between;
       gap: 1rem;
       padding: clamp(1rem, 3vw, 2rem);
+      transform: translateX(-50%);
       pointer-events: none;
     }
 
@@ -51,13 +60,14 @@
     .caption-wrap {
       position: absolute;
       z-index: 2;
-      right: 0;
-      bottom: 0;
-      left: 0;
+      left: 50%;
+      bottom: calc((100% - var(--frame-height, 100%)) / 2);
       display: grid;
       justify-items: center;
+      width: var(--frame-width, 100%);
       padding: 1rem 1rem max(1.25rem, env(safe-area-inset-bottom));
       background: linear-gradient(transparent, rgba(7, 10, 17, .88) 35%);
+      transform: translateX(-50%);
       pointer-events: none;
     }
 
@@ -105,23 +115,51 @@
     button.primary:hover { background: #ffc078; }
     button:disabled { opacity: .48; cursor: not-allowed; transform: none; }
 
+    select {
+      min-height: 42px;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 999px;
+      padding: .65rem 2rem .65rem 1rem;
+      background: rgba(15, 22, 34, .9);
+      color: #f8f6f0;
+      font: inherit;
+      font-size: .9rem;
+      cursor: pointer;
+    }
+
+    select:focus-visible { outline: 3px solid #f3ba71; outline-offset: 3px; }
+    .export-status {
+      position: absolute;
+      z-index: 3;
+      right: clamp(1rem, 3vw, 2rem);
+      bottom: clamp(10.5rem, 19vh, 12rem);
+      margin: 0;
+      color: #f3ba71;
+      font-size: .85rem;
+      text-align: right;
+      text-shadow: 0 2px 8px #000;
+    }
+
     .progress-track {
       position: absolute;
       z-index: 3;
-      right: 0;
-      bottom: 0;
-      left: 0;
+      bottom: calc((100% - var(--frame-height, 100%)) / 2);
+      left: 50%;
+      width: var(--frame-width, 100%);
       height: 4px;
       background: rgba(255,255,255,.14);
+      transform: translateX(-50%);
     }
 
     #progress { width: 0; height: 100%; background: #f3ba71; transition: width .1s linear; }
-    .hint { position: absolute; z-index: 2; top: 1.2rem; right: 1.5rem; color: #d3dae2; font-size: .8rem; opacity: .78; text-align: right; }
+    .hint { position: absolute; z-index: 2; top: calc((100% - var(--frame-height, 100%)) / 2 + 1.2rem); right: max(1.5rem, calc((100% - var(--frame-width, 100%)) / 2 + 1.5rem)); color: #d3dae2; font-size: .8rem; opacity: .78; text-align: right; }
     .error { position: absolute; z-index: 5; inset: auto 1rem 8rem; margin: auto; max-width: 600px; color: #ffd1c2; text-align: center; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 
     @media (max-width: 560px) {
-      .hint { top: auto; right: 1rem; bottom: 9.5rem; }
+      .hint { top: calc((100% - var(--frame-height, 100%)) / 2 + 1rem); right: max(1rem, calc((100% - var(--frame-width, 100%)) / 2 + 1rem)); bottom: auto; }
       .controls { left: 1rem; right: 1rem; bottom: 6rem; justify-content: center; }
+      .export-status { right: 1rem; bottom: 10rem; }
       .caption-wrap { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
     }
   </style>
@@ -148,7 +186,15 @@
       <button class="primary" id="start-button" type="button">Iniciar apresentação</button>
       <button id="pause-button" type="button" disabled>Pausar</button>
       <button id="restart-button" type="button" disabled>Reiniciar</button>
+      <label class="sr-only" for="video-format">Formato do vídeo</label>
+      <select id="video-format" aria-label="Formato do vídeo">
+        <option value="vertical">TikTok, Reels e Shorts · 9:16</option>
+        <option value="horizontal">YouTube · 16:9</option>
+        <option value="square">Feed quadrado · 1:1</option>
+      </select>
+      <button id="export-button" type="button">Exportar vídeo</button>
     </div>
+    <p class="export-status" id="export-status" role="status" aria-live="polite"></p>
     <div class="caption-wrap" aria-live="polite">
       <p id="caption">Uma pequena mariposa entrou para a história da computação. Vamos descobrir como.</p>
     </div>
@@ -170,6 +216,15 @@
     const startButton = document.querySelector("#start-button");
     const pauseButton = document.querySelector("#pause-button");
     const restartButton = document.querySelector("#restart-button");
+    const formatSelect = document.querySelector("#video-format");
+    const exportButton = document.querySelector("#export-button");
+    const exportStatus = document.querySelector("#export-status");
+
+    const videoFormats = {
+      vertical: { width: 1080, height: 1920, label: "vertical" },
+      horizontal: { width: 1920, height: 1080, label: "youtube" },
+      square: { width: 1080, height: 1080, label: "quadrado" }
+    };
 
     const scenes = [
       {
@@ -199,8 +254,6 @@
     ];
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -220,6 +273,42 @@
     controls.maxDistance = 21;
     controls.maxPolarAngle = Math.PI * .48;
     controls.target.set(...scenes[0].target);
+
+    let recorder = null;
+    let recording = false;
+    let recordingDestination = null;
+    let downloadUrl = null;
+    const exportCanvas = document.createElement("canvas");
+    const exportContext = exportCanvas.getContext("2d");
+
+    function fitCanvasToStage(aspect) {
+      const viewportAspect = window.innerWidth / window.innerHeight;
+      const width = viewportAspect > aspect ? window.innerHeight * aspect : window.innerWidth;
+      const height = width / aspect;
+      stage.style.setProperty("--frame-width", `${width}px`);
+      stage.style.setProperty("--frame-height", `${height}px`);
+      return { width, height };
+    }
+
+    function resizeRenderer() {
+      const format = videoFormats[formatSelect.value];
+      camera.aspect = format.width / format.height;
+      camera.fov = format.width < format.height ? 60 : format.width === format.height ? 48 : 42;
+      camera.updateProjectionMatrix();
+      if (recording) {
+        renderer.setPixelRatio(1);
+        renderer.setSize(format.width, format.height, false);
+      } else {
+        const { width, height } = fitCanvasToStage(camera.aspect);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(width, height);
+      }
+      const { width, height } = fitCanvasToStage(camera.aspect);
+      renderer.domElement.style.width = `${width}px`;
+      renderer.domElement.style.height = `${height}px`;
+    }
+
+    resizeRenderer();
 
     scene.add(new THREE.HemisphereLight("#c9e6ff", "#293043", 2.1));
     const keyLight = new THREE.DirectionalLight("#ffe1b5", 3.3);
@@ -496,24 +585,190 @@
       if (index !== 2) panelDoor.position.x = 4.25;
     }
 
-    startButton.addEventListener("click", async () => {
-      try {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        await audioContext.resume();
+    async function initializeAudio() {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) throw new Error("Este navegador não oferece suporte a áudio.");
+      if (!audioContext || audioContext.state === "closed") {
+        audioContext = new AudioContextClass();
         masterGain = audioContext.createGain();
         masterGain.gain.value = .45;
         masterGain.connect(audioContext.destination);
-        started = true;
-        paused = false;
-        finished = false;
-        elapsed = 0;
-        startButton.hidden = true;
-        pauseButton.disabled = false;
-        restartButton.disabled = false;
-        enterScene(0);
+      }
+      await audioContext.resume();
+    }
+
+    async function startPresentation() {
+      await initializeAudio();
+      started = true;
+      paused = false;
+      finished = false;
+      elapsed = 0;
+      startButton.hidden = true;
+      pauseButton.textContent = "Pausar";
+      pauseButton.disabled = recording;
+      restartButton.disabled = recording;
+      enterScene(0);
+    }
+
+    function drawExportFrame() {
+      const context = exportContext;
+      const width = exportCanvas.width;
+      const height = exportCanvas.height;
+      const scale = Math.min(width, height);
+      const margin = scale * .055;
+      const fontSize = scale * .045;
+      context.drawImage(renderer.domElement, 0, 0, width, height);
+
+      context.fillStyle = "rgba(7, 10, 17, .72)";
+      context.fillRect(0, 0, width, fontSize * 3.2);
+      context.fillStyle = "#f3ba71";
+      context.font = `600 ${fontSize * .38}px sans-serif`;
+      context.textAlign = "left";
+      context.fillText("UMA HISTÓRIA DA COMPUTAÇÃO", margin, fontSize * .75);
+      context.fillStyle = "#fff";
+      context.font = `700 ${fontSize * .72}px sans-serif`;
+      context.fillText(titleEl.textContent, margin, fontSize * 1.8, width - margin * 2);
+      context.fillStyle = "#d3dae2";
+      context.font = `${fontSize * .38}px sans-serif`;
+      context.fillText(countEl.textContent, margin, fontSize * 2.55);
+
+      const caption = captionEl.textContent;
+      context.font = `${fontSize * .48}px sans-serif`;
+      const words = caption.split(/\s+/);
+      const lines = [];
+      let line = "";
+      for (const word of words) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (context.measureText(candidate).width > width - margin * 2 && line) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = candidate;
+        }
+      }
+      if (line) lines.push(line);
+      const visibleLines = lines.slice(0, 4);
+      const lineHeight = fontSize * .68;
+      const captionHeight = visibleLines.length * lineHeight + margin * 1.5;
+      const captionTop = height - captionHeight - margin;
+      context.fillStyle = "rgba(7, 10, 17, .82)";
+      context.fillRect(0, captionTop, width, captionHeight + margin);
+      context.fillStyle = "#fff";
+      context.textAlign = "center";
+      visibleLines.forEach((text, index) => {
+        context.fillText(text, width / 2, captionTop + margin + lineHeight * (index + .75), width - margin * 2);
+      });
+      context.fillStyle = "rgba(255,255,255,.2)";
+      context.fillRect(0, height - 5, width, 5);
+      context.fillStyle = "#f3ba71";
+      context.fillRect(0, height - 5, width * (elapsed / totalDuration), 5);
+    }
+
+    startButton.addEventListener("click", async () => {
+      try {
+        await startPresentation();
       } catch (error) {
         captionEl.textContent = "Não foi possível ativar o áudio. Verifique as permissões do navegador e tente novamente.";
         console.error("Falha ao iniciar áudio:", error);
+      }
+    });
+
+    formatSelect.addEventListener("change", resizeRenderer);
+
+    exportButton.addEventListener("click", async () => {
+      if (!window.MediaRecorder || !renderer.domElement.captureStream || !exportCanvas.captureStream) {
+        exportStatus.textContent = "A exportação de vídeo não é compatível com este navegador.";
+        return;
+      }
+
+      const format = videoFormats[formatSelect.value];
+      let exportFailed = false;
+      const chunks = [];
+      try {
+        await initializeAudio();
+        exportCanvas.width = format.width;
+        exportCanvas.height = format.height;
+        recordingDestination = audioContext.createMediaStreamDestination();
+        masterGain.connect(recordingDestination);
+        recording = true;
+        resizeRenderer();
+
+        const videoStream = exportCanvas.captureStream(30);
+        const tracks = [...videoStream.getVideoTracks(), ...recordingDestination.stream.getAudioTracks()];
+        const stream = new MediaStream(tracks);
+        const mimeType = [
+          "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+          "video/mp4;codecs=avc1.42E01E",
+          "video/mp4",
+          "video/webm;codecs=vp9",
+          "video/webm;codecs=vp8",
+          "video/webm"
+        ]
+          .find(type => MediaRecorder.isTypeSupported(type));
+        recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+        recorder.ondataavailable = event => {
+          if (event.data.size) chunks.push(event.data);
+        };
+        recorder.onerror = event => {
+          exportFailed = true;
+          exportStatus.textContent = "Ocorreu um erro durante a gravação do vídeo.";
+          console.error("Falha ao gravar vídeo:", event.error);
+          if (recorder.state !== "inactive") recorder.stop();
+        };
+        recorder.onstop = () => {
+          recording = false;
+          if (recordingDestination) {
+            masterGain.disconnect(recordingDestination);
+            recordingDestination = null;
+          }
+          resizeRenderer();
+          pauseButton.disabled = !started || finished;
+          restartButton.disabled = !started;
+          exportButton.disabled = false;
+          formatSelect.disabled = false;
+
+          if (exportFailed) return;
+          if (!chunks.length) {
+            exportStatus.textContent = "A gravação terminou sem gerar um arquivo de vídeo.";
+            return;
+          }
+          const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
+          const extension = recorder.mimeType.startsWith("video/mp4") ? "mp4" : "webm";
+          if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+          downloadUrl = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = downloadUrl;
+          link.download = `historia-do-bug-${format.label}.${extension}`;
+          link.textContent = "Baixar vídeo novamente";
+          exportStatus.replaceChildren(document.createTextNode("Vídeo exportado. "), link);
+          link.click();
+        };
+
+        exportButton.disabled = true;
+        formatSelect.disabled = true;
+        pauseButton.disabled = true;
+        restartButton.disabled = true;
+        exportStatus.textContent = "Gravando com legendas e efeitos sonoros; a narração falada não é incluída.";
+        recorder.start(1000);
+        await startPresentation();
+      } catch (error) {
+        exportFailed = true;
+        exportStatus.textContent = "Não foi possível exportar o vídeo neste navegador.";
+        console.error("Falha ao iniciar exportação:", error);
+        if (recorder && recorder.state !== "inactive") {
+          recorder.stop();
+        } else {
+          recording = false;
+          if (recordingDestination) {
+            masterGain.disconnect(recordingDestination);
+            recordingDestination = null;
+          }
+          resizeRenderer();
+          exportButton.disabled = false;
+          formatSelect.disabled = false;
+          pauseButton.disabled = !started || finished;
+          restartButton.disabled = !started;
+        }
       }
     });
 
@@ -556,6 +811,7 @@
           pauseButton.disabled = true;
           captionEl.textContent = "A apresentação terminou. Reinicie para assistir novamente.";
           if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+          if (recording && recorder?.state === "recording") recorder.stop();
         }
         const index = sceneAt(elapsed);
         if (index !== currentSceneIndex && !finished) {
@@ -569,8 +825,13 @@
 
       const activeIndex = currentSceneIndex < 0 ? 0 : currentSceneIndex;
       const active = scenes[activeIndex];
-      camera.position.lerp(new THREE.Vector3(...active.camera), .025);
-      controls.target.lerp(new THREE.Vector3(...active.target), .025);
+      const target = new THREE.Vector3(...active.target);
+      const cameraPosition = new THREE.Vector3(...active.camera);
+      if (camera.aspect < 1) {
+        cameraPosition.sub(target).multiplyScalar(1.25).add(target);
+      }
+      camera.position.lerp(cameraPosition, .025);
+      controls.target.lerp(target, .025);
       controls.update();
 
       relays.forEach((relay, i) => { relay.rotation.z = Math.sin(animationTime * 1.5 + i) * .22; });
@@ -634,18 +895,15 @@
       }
 
       renderer.render(scene, camera);
+      if (recording) drawExportFrame();
     }
     animate();
 
-    window.addEventListener("resize", () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    });
+    window.addEventListener("resize", resizeRenderer);
 
     window.addEventListener("beforeunload", () => {
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
       renderer.dispose();
     });
   </script>
