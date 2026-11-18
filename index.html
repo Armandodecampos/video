@@ -192,6 +192,10 @@
         <option value="horizontal">YouTube · 16:9</option>
         <option value="square">Feed quadrado · 1:1</option>
       </select>
+      <label class="sr-only" for="voice-select">Voz da narração</label>
+      <select id="voice-select" aria-label="Voz da narração">
+        <option value="">Carregando vozes…</option>
+      </select>
       <button id="export-button" type="button">Exportar vídeo</button>
     </div>
     <p class="export-status" id="export-status" role="status" aria-live="polite"></p>
@@ -217,6 +221,7 @@
     const pauseButton = document.querySelector("#pause-button");
     const restartButton = document.querySelector("#restart-button");
     const formatSelect = document.querySelector("#video-format");
+    const voiceSelect = document.querySelector("#voice-select");
     const exportButton = document.querySelector("#export-button");
     const exportStatus = document.querySelector("#export-status");
 
@@ -520,6 +525,44 @@
     let currentUtterance = null;
     const totalDuration = scenes.reduce((sum, item) => sum + item.duration, 0);
 
+    function getPortugueseVoices() {
+      if (!("speechSynthesis" in window)) return [];
+      return window.speechSynthesis.getVoices()
+        .filter(voice => voice.lang.toLowerCase().startsWith("pt"))
+        .sort((a, b) => {
+          const score = voice => {
+            const name = voice.name.toLowerCase();
+            return (voice.lang.toLowerCase() === "pt-br" ? 4 : 0)
+              + (/natural|neural|online|premium|enhanced/.test(name) ? 8 : 0);
+          };
+          return score(b) - score(a);
+        });
+    }
+
+    function updateVoiceOptions() {
+      const voices = getPortugueseVoices();
+      const selectedVoice = voiceSelect.value;
+      voiceSelect.replaceChildren();
+
+      if (!voices.length) {
+        voiceSelect.add(new Option("Voz em português indisponível", ""));
+        voiceSelect.disabled = true;
+        return;
+      }
+
+      voiceSelect.add(new Option("Automática (voz mais natural)", ""));
+      voices.forEach(voice => {
+        voiceSelect.add(new Option(`${voice.name} — ${voice.lang}`, voice.voiceURI));
+      });
+      voiceSelect.value = voices.some(voice => voice.voiceURI === selectedVoice) ? selectedVoice : "";
+      voiceSelect.disabled = false;
+    }
+
+    updateVoiceOptions();
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.addEventListener("voiceschanged", updateVoiceOptions);
+    }
+
     function playTone(frequency, duration = .12, type = "sine", volume = .045) {
       if (!audioContext || !masterGain || audioContext.state !== "running") return;
       const oscillator = audioContext.createOscillator();
@@ -539,12 +582,10 @@
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(scenes[index].narration);
       utterance.lang = "pt-BR";
-      utterance.rate = .94;
+      utterance.rate = 1;
       utterance.pitch = 1;
-      const voices = window.speechSynthesis.getVoices();
-      utterance.voice = voices.find(voice => voice.lang.toLowerCase() === "pt-br")
-        || voices.find(voice => voice.lang.toLowerCase().startsWith("pt"))
-        || null;
+      const voices = getPortugueseVoices();
+      utterance.voice = voices.find(voice => voice.voiceURI === voiceSelect.value) || voices[0] || null;
       currentUtterance = utterance;
       window.speechSynthesis.speak(utterance);
     }
@@ -674,6 +715,10 @@
     });
 
     formatSelect.addEventListener("change", resizeRenderer);
+
+    voiceSelect.addEventListener("change", () => {
+      if (started && !paused && currentSceneIndex >= 0) speakScene(currentSceneIndex);
+    });
 
     exportButton.addEventListener("click", async () => {
       if (!window.MediaRecorder || !renderer.domElement.captureStream || !exportCanvas.captureStream) {
