@@ -532,8 +532,8 @@
         .sort((a, b) => {
           const score = voice => {
             const name = voice.name.toLowerCase();
-            return (voice.lang.toLowerCase() === "pt-br" ? 4 : 0)
-              + (/natural|neural|online|premium|enhanced/.test(name) ? 8 : 0);
+            return (voice.lang.toLowerCase() === "pt-br" ? 8 : 0)
+              + (/natural|neural|online|premium|enhanced/.test(name) ? 4 : 0);
           };
           return score(b) - score(a);
         });
@@ -550,7 +550,7 @@
         return;
       }
 
-      voiceSelect.add(new Option("Automática (voz mais natural)", ""));
+      voiceSelect.add(new Option("Automática (recomendada)", ""));
       voices.forEach(voice => {
         voiceSelect.add(new Option(`${voice.name} — ${voice.lang}`, voice.voiceURI));
       });
