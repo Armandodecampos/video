@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101523">
+  <title>A história do bug — uma viagem em 3D</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #101523;
+      color: #f5f2e9;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
+
+    * { box-sizing: border-box; }
+
+    body { margin: 0; min-width: 320px; min-height: 100vh; overflow: hidden; }
+
+    #stage {
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 50% 40%, rgba(35, 57, 78, .5), transparent 60%),
+        #101523;
+    }
+
+    #stage canvas { display: block; width: 100%; height: 100%; }
+
+    .topbar {
+      position: absolute;
+      z-index: 2;
+      top: 0;
+      left: 0;
+      display: flex;
+      width: 100%;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: clamp(1rem, 3vw, 2rem);
+      pointer-events: none;
+    }
+
+    .brand, .scene-label { text-shadow: 0 2px 18px #000; }
+    .brand { margin: 0; font-size: clamp(.85rem, 1.5vw, 1rem); letter-spacing: .16em; text-transform: uppercase; color: #f3ba71; }
+    .scene-label { margin: .45rem 0 0; font-size: clamp(1.2rem, 2.5vw, 2rem); font-weight: 650; }
+    .scene-count { margin-top: .2rem; color: #b6c1cc; font-size: .9rem; }
+
+    .caption-wrap {
+      position: absolute;
+      z-index: 2;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      display: grid;
+      justify-items: center;
+      padding: 1rem 1rem max(1.25rem, env(safe-area-inset-bottom));
+      background: linear-gradient(transparent, rgba(7, 10, 17, .88) 35%);
+      pointer-events: none;
+    }
+
+    #caption {
+      width: min(850px, 100%);
+      min-height: 3.2em;
+      margin: 0;
+      text-align: center;
+      text-wrap: balance;
+      color: #fff;
+      font-size: clamp(1rem, 2vw, 1.35rem);
+      line-height: 1.55;
+      text-shadow: 0 2px 5px #000;
+    }
+
+    .controls {
+      position: absolute;
+      z-index: 3;
+      right: clamp(1rem, 3vw, 2rem);
+      bottom: clamp(5.5rem, 12vh, 7rem);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: .6rem;
+    }
+
+    button {
+      min-height: 42px;
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 999px;
+      padding: .65rem 1rem;
+      background: rgba(15, 22, 34, .82);
+      color: #f8f6f0;
+      font: inherit;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      backdrop-filter: blur(12px);
+      transition: background .2s, transform .2s, border-color .2s;
+    }
+
+    button:hover { transform: translateY(-2px); background: #29374a; border-color: #f3ba71; }
+    button:focus-visible { outline: 3px solid #f3ba71; outline-offset: 3px; }
+    button.primary { border-color: transparent; background: #e9974b; color: #1c1820; }
+    button.primary:hover { background: #ffc078; }
+    button:disabled { opacity: .48; cursor: not-allowed; transform: none; }
+
+    .progress-track {
+      position: absolute;
+      z-index: 3;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      height: 4px;
+      background: rgba(255,255,255,.14);
+    }
+
+    #progress { width: 0; height: 100%; background: #f3ba71; transition: width .1s linear; }
+    .hint { position: absolute; z-index: 2; top: 1.2rem; right: 1.5rem; color: #d3dae2; font-size: .8rem; opacity: .78; text-align: right; }
+    .error { position: absolute; z-index: 5; inset: auto 1rem 8rem; margin: auto; max-width: 600px; color: #ffd1c2; text-align: center; }
+
+    @media (max-width: 560px) {
+      .hint { top: auto; right: 1rem; bottom: 9.5rem; }
+      .controls { left: 1rem; right: 1rem; bottom: 6rem; justify-content: center; }
+      .caption-wrap { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <main id="stage" aria-label="Apresentação 3D sobre a origem do termo bug">
+    <header class="topbar">
+      <div>
+        <p class="brand">Uma história da computação</p>
+        <h1 class="scene-label" id="scene-title">O que é um bug?</h1>
+        <div class="scene-count" id="scene-count">Cena 1 de 4</div>
+      </div>
+      <div class="hint">Arraste para girar · role para aproximar</div>
+    </header>
+    <div class="controls" aria-label="Controles da apresentação">
+      <button class="primary" id="start-button" type="button">Iniciar apresentação</button>
+      <button id="pause-button" type="button" disabled>Pausar</button>
+      <button id="restart-button" type="button" disabled>Reiniciar</button>
+    </div>
+    <div class="caption-wrap" aria-live="polite">
+      <p id="caption">Uma pequena mariposa entrou para a história da computação. Vamos descobrir como.</p>
+    </div>
+    <div class="progress-track" role="progressbar" aria-label="Progresso da apresentação" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <div id="progress"></div>
+    </div>
+  </main>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+    const stage = document.querySelector("#stage");
+    const titleEl = document.querySelector("#scene-title");
+    const countEl = document.querySelector("#scene-count");
+    const captionEl = document.querySelector("#caption");
+    const progressEl = document.querySelector("#progress");
+    const progressTrack = document.querySelector(".progress-track");
+    const startButton = document.querySelector("#start-button");
+    const pauseButton = document.querySelector("#pause-button");
+    const restartButton = document.querySelector("#restart-button");
+
+    const scenes = [
+      {
+        title: "Uma máquina extraordinária",
+        caption: "Em 1947, o Harvard Mark II era um computador eletromecânico enorme, feito de relés e circuitos.",
+        narration: "Em mil novecentos e quarenta e sete, o Harvard Mark dois era um computador eletromecânico enorme, feito de relés e circuitos.",
+        camera: [7, 5, 11], target: [0, 2.3, 0], duration: 13
+      },
+      {
+        title: "Uma visitante inesperada",
+        caption: "Uma mariposa ficou presa em um relé e causou uma falha. A equipe registrou o inseto no diário de operação.",
+        narration: "Certo dia, uma mariposa ficou presa em um relé e causou uma falha. A equipe encontrou o inseto e o registrou no diário de operação.",
+        camera: [4.5, 3.5, 7.5], target: [0, 2.2, 0], duration: 14
+      },
+      {
+        title: "Grace Hopper e o registro",
+        caption: "Grace Hopper e sua equipe colaram a mariposa no caderno, com a anotação: “First actual case of bug being found.”",
+        narration: "Grace Hopper e sua equipe colaram a mariposa no caderno, com a anotação: First actual case of bug being found. Primeiro caso real de um bug encontrado.",
+        camera: [5, 3.5, 7], target: [0, 2, 0], duration: 15
+      },
+      {
+        title: "Um termo que permaneceu",
+        caption: "A história ficou famosa, mas a palavra bug já era usada para descrever defeitos técnicos antes de 1947. Hoje, debugging é corrigir erros em software.",
+        narration: "A história ficou famosa, mas a palavra bug já era usada para descrever defeitos técnicos antes de mil novecentos e quarenta e sete. Hoje, debugging é o processo de encontrar e corrigir erros em um programa.",
+        camera: [6, 4, 8], target: [0, 1.5, 0], duration: 17
+      }
+    ];
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    stage.prepend(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color("#101523");
+    scene.fog = new THREE.Fog("#101523", 18, 38);
+    const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, .1, 100);
+    camera.position.set(...scenes[0].camera);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = .06;
+    controls.minDistance = 4;
+    controls.maxDistance = 21;
+    controls.maxPolarAngle = Math.PI * .48;
+    controls.target.set(...scenes[0].target);
+
+    scene.add(new THREE.HemisphereLight("#c9e6ff", "#293043", 2.1));
+    const keyLight = new THREE.DirectionalLight("#ffe1b5", 3.3);
+    keyLight.position.set(-5, 10, 7);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(2048, 2048);
+    keyLight.shadow.camera.left = -12;
+    keyLight.shadow.camera.right = 12;
+    keyLight.shadow.camera.top = 12;
+    keyLight.shadow.camera.bottom = -8;
+    scene.add(keyLight);
+    const rimLight = new THREE.PointLight("#51b9d1", 38, 22);
+    rimLight.position.set(6, 5, -5);
+    scene.add(rimLight);
+
+    const materials = {
+      floor: new THREE.MeshStandardMaterial({ color: "#222a36", roughness: .88 }),
+      machine: new THREE.MeshStandardMaterial({ color: "#476078", metalness: .62, roughness: .38 }),
+      dark: new THREE.MeshStandardMaterial({ color: "#202b37", metalness: .5, roughness: .48 }),
+      brass: new THREE.MeshStandardMaterial({ color: "#d49a50", metalness: .62, roughness: .32 }),
+      glass: new THREE.MeshStandardMaterial({ color: "#7cc8ca", emissive: "#287477", emissiveIntensity: .8, metalness: .15, roughness: .22 }),
+      red: new THREE.MeshStandardMaterial({ color: "#ff4f45", emissive: "#ff291d", emissiveIntensity: 2 }),
+      amber: new THREE.MeshStandardMaterial({ color: "#ffc568", emissive: "#ff9f35", emissiveIntensity: 1.3 }),
+      moth: new THREE.MeshStandardMaterial({ color: "#d8c7a6", roughness: .85, side: THREE.DoubleSide }),
+      coat: new THREE.MeshStandardMaterial({ color: "#437f85", roughness: .72 }),
+      skin: new THREE.MeshStandardMaterial({ color: "#ca9979", roughness: .82 }),
+      hair: new THREE.MeshStandardMaterial({ color: "#322c32", roughness: .9 }),
+      paper: new THREE.MeshStandardMaterial({ color: "#f0e2c1", roughness: .95 }),
+      laptop: new THREE.MeshStandardMaterial({ color: "#738293", metalness: .72, roughness: .28 }),
+      screen: new THREE.MeshStandardMaterial({ color: "#173d48", emissive: "#087b83", emissiveIntensity: .8, roughness: .35 })
+    };
+
+    const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+    const sphereGeometry = new THREE.SphereGeometry(1, 10, 8);
+    const cylinderGeometry = new THREE.CylinderGeometry(.5, .5, 1, 10);
+    const coneGeometry = new THREE.ConeGeometry(.5, 1, 6);
+    const planeGeometry = new THREE.PlaneGeometry(1, 1);
+    const addBox = (parent, material, position, scale, geometry = boxGeometry) => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(...position);
+      mesh.scale.set(...scale);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    };
+    const group = (parent, position = [0, 0, 0]) => {
+      const obj = new THREE.Group();
+      obj.position.set(...position);
+      parent.add(obj);
+      return obj;
+    };
+
+    const floor = addBox(scene, materials.floor, [0, -.18, 0], [200, .3, 200]);
+    floor.receiveShadow = true;
+
+    // O painel e seus relés permanecem na cena durante as três primeiras etapas.
+    const machine = group(scene, [0, 0, 0]);
+    addBox(machine, materials.dark, [0, 2.2, 0], [7, 4.5, .48]);
+    addBox(machine, materials.machine, [0, 2.25, .28], [6.8, 4.35, .22]);
+    addBox(machine, materials.dark, [0, 2.3, .43], [6.35, 3.82, .18]);
+
+    const relays = [];
+    const lamps = [];
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 7; col++) {
+        const x = (col - 3) * .79;
+        const y = 3.38 - row * 1.08;
+        const relay = group(machine, [x, y, .64]);
+        addBox(relay, materials.machine, [0, 0, 0], [.59, .78, .24]);
+        const axle = new THREE.Mesh(cylinderGeometry, materials.brass);
+        axle.rotation.x = Math.PI / 2;
+        axle.scale.set(.2, .38, .2);
+        axle.position.set(0, 0, .18);
+        axle.castShadow = true;
+        relay.add(axle);
+        addBox(relay, materials.glass, [0, -.29, .21], [.13, .12, .09], sphereGeometry);
+        relays.push(axle);
+        if (row === 0) lamps.push(relay.children[2]);
+      }
+    }
+
+    for (let i = 0; i < 6; i++) {
+      const x = -2.35 + i * .94;
+      addBox(machine, materials.brass, [x, 4.55, .4], [.18, .38, .2], cylinderGeometry);
+      addBox(machine, materials.dark, [x, 4.83, .4], [.34, .2, .32]);
+    }
+    addBox(machine, materials.brass, [-3.02, .44, .42], [.55, .34, .2], cylinderGeometry);
+    addBox(machine, materials.brass, [3.02, .44, .42], [.55, .34, .2], cylinderGeometry);
+    const alertLamp = addBox(machine, materials.amber, [2.83, 3.96, .55], [.23, .23, .12], sphereGeometry);
+    const panelDoor = addBox(machine, materials.machine, [4.25, 2.22, .58], [1.2, 3.9, .18]);
+    addBox(machine, materials.brass, [3.79, 2.22, .71], [.12, .55, .1], cylinderGeometry);
+
+    // Mariposa low-poly: corpo facetado e asas triangulares articuladas.
+    const mothRoot = group(scene, [-4.3, 2.6, 1.2]);
+    const mothBody = addBox(mothRoot, materials.moth, [0, 0, 0], [.2, .65, .2], sphereGeometry);
+    mothBody.rotation.z = Math.PI / 2;
+    const wingL = addBox(mothRoot, materials.moth, [-.23, .12, 0], [.62, .35, .09], coneGeometry);
+    wingL.rotation.z = .35;
+    const wingR = addBox(mothRoot, materials.moth, [.23, .12, 0], [.62, .35, .09], coneGeometry);
+    wingR.rotation.z = -.35;
+    const antennaL = addBox(mothRoot, materials.dark, [-.11, .38, .03], [.07, .35, .07], coneGeometry);
+    antennaL.rotation.z = -.35;
+    const antennaR = addBox(mothRoot, materials.dark, [.11, .38, .03], [.07, .35, .07], coneGeometry);
+    antennaR.rotation.z = .35;
+
+    const hopper = group(scene, [3.6, 0, 2.4]);
+    addBox(hopper, materials.coat, [0, 1.23, 0], [.82, 1.42, .48]);
+    addBox(hopper, materials.skin, [0, 2.2, 0], [.62, .65, .58], sphereGeometry);
+    addBox(hopper, materials.hair, [0, 2.42, -.04], [.68, .34, .61], sphereGeometry);
+    addBox(hopper, materials.skin, [-.39, 1.35, .02], [.22, .82, .23], cylinderGeometry).rotation.z = -.38;
+    const arm = addBox(hopper, materials.skin, [.46, 1.45, .05], [.2, .84, .2], cylinderGeometry);
+    arm.rotation.z = -.7;
+    addBox(hopper, materials.dark, [-.22, .18, 0], [.25, .4, .3]);
+    addBox(hopper, materials.dark, [.22, .18, 0], [.25, .4, .3]);
+
+    // Página ilustrada como textura sobre um plano; objetos da cena continuam geométricos.
+    function makeTextTexture(lines, options = {}) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 768;
+      canvas.height = 512;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = options.background || "#f0e2c1";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = options.color || "#352e2a";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      lines.forEach((line, i) => {
+        ctx.font = `${i === 0 && options.title ? "bold 30px" : "24px"} Georgia, serif`;
+        ctx.fillText(line, canvas.width / 2, 125 + i * 58, 680);
+      });
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      return new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+    }
+
+    const notebook = group(scene, [-1.4, 1.25, 2.8]);
+    addBox(notebook, materials.brass, [0, 0, 0], [2.65, 1.95, .18]);
+    addBox(notebook, materials.paper, [0, 0, .11], [2.48, 1.78, .04]);
+    const notePage = new THREE.Mesh(planeGeometry, makeTextTexture([
+      "First actual case of",
+      "bug being found",
+      "— 9 September 1947 —"
+    ]));
+    notePage.position.set(0, 0, .14);
+    notePage.scale.set(2.4, 1.72, 1);
+    notebook.add(notePage);
+    for (let i = 0; i < 5; i++) addBox(notebook, materials.brass, [-1.27 + i * .12, 0, .14], [.045, .18, .07], cylinderGeometry);
+    const stuckMoth = group(notebook, [.52, -.29, .19]);
+    addBox(stuckMoth, materials.moth, [0, 0, 0], [.17, .42, .08], sphereGeometry);
+    const stuckWing1 = addBox(stuckMoth, materials.moth, [-.16, .08, .02], [.35, .2, .05], coneGeometry);
+    stuckWing1.rotation.z = .25;
+    const stuckWing2 = addBox(stuckMoth, materials.moth, [.16, .08, .02], [.35, .2, .05], coneGeometry);
+    stuckWing2.rotation.z = -.25;
+
+    const laptopGroup = group(scene, [0, 0, 0]);
+    addBox(laptopGroup, materials.laptop, [0, .27, 0], [4.2, .18, 2.65]);
+    addBox(laptopGroup, materials.dark, [0, .38, -.12], [3.9, .025, 2.18]);
+    const laptopScreen = group(laptopGroup, [0, .3, -1.14]);
+    const lid = addBox(laptopScreen, materials.laptop, [0, 1.55, -.08], [4.08, 2.5, .16]);
+    lid.rotation.x = -.12;
+    const display = addBox(laptopScreen, materials.screen, [0, 1.55, .012], [3.76, 2.18, .035]);
+    display.rotation.x = -.12;
+    const displayTexture = new THREE.Mesh(planeGeometry, makeTextTexture([
+      "bug  →  debugging",
+      "encontrar · corrigir · aprender"
+    ], { background: "#123d48", color: "#baf3dd", title: true }));
+    displayTexture.position.set(0, 1.55, .04);
+    displayTexture.rotation.x = -.12;
+    displayTexture.scale.set(3.55, 1.9, 1);
+    laptopScreen.add(displayTexture);
+    for (let row = 0; row < 4; row++) {
+      for (let col = 0; col < 12; col++) {
+        addBox(laptopGroup, materials.machine, [-1.7 + col * .31, .405, -.88 + row * .24], [.23, .025, .14]);
+      }
+    }
+
+    const sparks = [];
+    const sparkMaterials = [
+      new THREE.MeshStandardMaterial({ color: "#ff9b50", emissive: "#ff481e", emissiveIntensity: 2 }),
+      new THREE.MeshStandardMaterial({ color: "#ffd16a", emissive: "#ff9a25", emissiveIntensity: 1.6 })
+    ];
+    for (let i = 0; i < 30; i++) {
+      const spark = new THREE.Mesh(i % 2 ? boxGeometry : coneGeometry, sparkMaterials[i % 2]);
+      spark.scale.setScalar(.06 + Math.random() * .1);
+      spark.castShadow = true;
+      spark.userData = { phase: Math.random() * Math.PI * 2, speed: .6 + Math.random() * 1.2 };
+      scene.add(spark);
+      sparks.push(spark);
+    }
+
+    // Luzes de fundo em pontos discretos para dar profundidade à composição.
+    for (let i = 0; i < 42; i++) {
+      const star = new THREE.Mesh(sphereGeometry, new THREE.MeshBasicMaterial({ color: i % 3 ? "#91a8ba" : "#f3ba71" }));
+      star.position.set((Math.random() - .5) * 32, Math.random() * 13 + 1, -8 - Math.random() * 10);
+      star.scale.setScalar(.018 + Math.random() * .035);
+      scene.add(star);
+    }
+
+    let audioContext;
+    let masterGain;
+    let started = false;
+    let paused = false;
+    let finished = false;
+    let elapsed = 0;
+    let currentSceneIndex = -1;
+    let lastBeep = 0;
+    let lastBuzz = 0;
+    let currentUtterance = null;
+    const totalDuration = scenes.reduce((sum, item) => sum + item.duration, 0);
+
+    function playTone(frequency, duration = .12, type = "sine", volume = .045) {
+      if (!audioContext || !masterGain || audioContext.state !== "running") return;
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+      gain.gain.setValueAtTime(volume, audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(.001, audioContext.currentTime + duration);
+      oscillator.connect(gain);
+      gain.connect(masterGain);
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + duration);
+    }
+
+    function speakScene(index) {
+      if (!("speechSynthesis" in window) || !started || paused) return;
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(scenes[index].narration);
+      utterance.lang = "pt-BR";
+      utterance.rate = .94;
+      utterance.pitch = 1;
+      const voices = window.speechSynthesis.getVoices();
+      utterance.voice = voices.find(voice => voice.lang.toLowerCase() === "pt-br")
+        || voices.find(voice => voice.lang.toLowerCase().startsWith("pt"))
+        || null;
+      currentUtterance = utterance;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function enterScene(index) {
+      currentSceneIndex = index;
+      const item = scenes[index];
+      setSceneVisibility(index);
+      titleEl.textContent = item.title;
+      countEl.textContent = `Cena ${index + 1} de ${scenes.length}`;
+      captionEl.textContent = item.caption;
+      if (started) speakScene(index);
+      if (index === 0) playTone(660, .16, "sine");
+      if (index === 1) {
+        playTone(190, .65, "sawtooth", .075);
+        setTimeout(() => playTone(150, .7, "square", .035), 180);
+      }
+      if (index === 2) playTone(540, .2, "triangle", .035);
+      if (index === 3) playTone(740, .2, "sine", .03);
+    }
+
+    function sceneAt(time) {
+      let sum = 0;
+      for (let i = 0; i < scenes.length; i++) {
+        sum += scenes[i].duration;
+        if (time < sum) return i;
+      }
+      return scenes.length - 1;
+    }
+
+    function setSceneVisibility(index) {
+      machine.visible = index < 3;
+      mothRoot.visible = index === 1;
+      hopper.visible = index === 2;
+      notebook.visible = index === 2;
+      laptopGroup.visible = index === 3;
+      sparks.forEach(spark => { spark.visible = index === 1; });
+      if (index !== 2) panelDoor.position.x = 4.25;
+    }
+
+    startButton.addEventListener("click", async () => {
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        await audioContext.resume();
+        masterGain = audioContext.createGain();
+        masterGain.gain.value = .45;
+        masterGain.connect(audioContext.destination);
+        started = true;
+        paused = false;
+        finished = false;
+        elapsed = 0;
+        startButton.hidden = true;
+        pauseButton.disabled = false;
+        restartButton.disabled = false;
+        enterScene(0);
+      } catch (error) {
+        captionEl.textContent = "Não foi possível ativar o áudio. Verifique as permissões do navegador e tente novamente.";
+        console.error("Falha ao iniciar áudio:", error);
+      }
+    });
+
+    pauseButton.addEventListener("click", () => {
+      if (!started || finished) return;
+      paused = !paused;
+      pauseButton.textContent = paused ? "Continuar" : "Pausar";
+      if (paused) {
+        if ("speechSynthesis" in window) window.speechSynthesis.pause();
+        if (audioContext?.state === "running") audioContext.suspend();
+      } else {
+        if ("speechSynthesis" in window) window.speechSynthesis.resume();
+        if (audioContext?.state === "suspended") audioContext.resume();
+      }
+    });
+
+    restartButton.addEventListener("click", () => {
+      elapsed = 0;
+      finished = false;
+      paused = false;
+      pauseButton.textContent = "Pausar";
+      pauseButton.disabled = false;
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      if (audioContext?.state === "suspended") audioContext.resume();
+      started = true;
+      enterScene(0);
+    });
+
+    const clock = new THREE.Clock();
+    let animationTime = 0;
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = Math.min(clock.getDelta(), .05);
+      animationTime += delta;
+      if (started && !paused && !finished) {
+        elapsed += delta;
+        if (elapsed >= totalDuration) {
+          elapsed = totalDuration;
+          finished = true;
+          pauseButton.disabled = true;
+          captionEl.textContent = "A apresentação terminou. Reinicie para assistir novamente.";
+          if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+        }
+        const index = sceneAt(elapsed);
+        if (index !== currentSceneIndex && !finished) {
+          enterScene(index);
+          setSceneVisibility(index);
+        }
+        const percent = elapsed / totalDuration * 100;
+        progressEl.style.width = `${percent}%`;
+        progressTrack.setAttribute("aria-valuenow", String(Math.round(percent)));
+      }
+
+      const activeIndex = currentSceneIndex < 0 ? 0 : currentSceneIndex;
+      const active = scenes[activeIndex];
+      camera.position.lerp(new THREE.Vector3(...active.camera), .025);
+      controls.target.lerp(new THREE.Vector3(...active.target), .025);
+      controls.update();
+
+      relays.forEach((relay, i) => { relay.rotation.z = Math.sin(animationTime * 1.5 + i) * .22; });
+      lamps.forEach((lamp, i) => {
+        const failed = activeIndex === 1;
+        lamp.material = failed ? materials.red : materials.glass;
+        lamp.material.emissiveIntensity = failed ? 1.5 + Math.sin(animationTime * 9 + i) * .6 : .45 + (Math.sin(animationTime * 4 + i) + 1) * .35;
+      });
+      alertLamp.material = activeIndex === 1 ? materials.red : materials.amber;
+      alertLamp.material.emissiveIntensity = activeIndex === 1 ? 2 + Math.sin(animationTime * 12) : 1;
+
+      if (activeIndex === 1) {
+        const flyProgress = Math.min((elapsed - scenes[0].duration) / 5.2, 1);
+        mothRoot.position.set(
+          THREE.MathUtils.lerp(-4.3, .15, flyProgress),
+          2.6 + Math.sin(animationTime * 8) * .28,
+          1.2 + Math.sin(animationTime * 4) * .18
+        );
+        mothRoot.rotation.z = Math.sin(animationTime * 8) * .12;
+        const flap = Math.sin(animationTime * 18) * .42;
+        wingL.rotation.z = .35 + flap;
+        wingR.rotation.z = -.35 - flap;
+        sparks.forEach((spark, i) => {
+          const phase = (animationTime * spark.userData.speed + spark.userData.phase) % 2;
+          spark.position.set(
+            (i % 7 - 3) * .3 + Math.sin(animationTime * 3 + i) * .28,
+            .9 + phase * 1.7,
+            .95 + Math.cos(animationTime * 2 + i) * .25
+          );
+          spark.rotation.set(animationTime * 2 + i, animationTime * 3, animationTime);
+        });
+        if (animationTime - lastBeep > 1.8) {
+          playTone(460 + Math.random() * 280, .08, "sine", .018);
+          lastBeep = animationTime;
+        }
+        if (animationTime - lastBuzz > .32) {
+          playTone(115, .16, "triangle", .012);
+          lastBuzz = animationTime;
+        }
+      }
+
+      if (activeIndex === 2) {
+        const sceneTime = elapsed - scenes[0].duration - scenes[1].duration;
+        const approach = THREE.MathUtils.smoothstep(sceneTime, 0, 5);
+        hopper.position.x = THREE.MathUtils.lerp(3.6, 2.3, approach);
+        panelDoor.position.x = THREE.MathUtils.lerp(4.25, 4.92, THREE.MathUtils.smoothstep(sceneTime, 2, 5));
+        if (sceneTime > 6) {
+          mothRoot.visible = false;
+          stuckMoth.visible = true;
+        } else {
+          stuckMoth.visible = false;
+        }
+        const flap = Math.sin(animationTime * 18) * .36;
+        wingL.rotation.z = .35 + flap;
+        wingR.rotation.z = -.35 - flap;
+      }
+
+      if (activeIndex === 3) {
+        laptopGroup.rotation.y = Math.sin(animationTime * .23) * .13;
+        laptopGroup.position.y = .08 + Math.sin(animationTime * .8) * .08;
+      }
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    });
+
+    window.addEventListener("beforeunload", () => {
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      renderer.dispose();
+    });
+  </script>
+</body>
+</html>
